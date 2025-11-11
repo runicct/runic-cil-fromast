@@ -23,6 +23,7 @@
  */
 
 using Runic.AST;
+using System.Collections.Generic;
 using System.IO;
 using static Runic.AST.Node.Expression;
 using static Runic.AST.Node.Expression.Constant;
@@ -43,7 +44,7 @@ namespace Runic.CIL
                     result.Add((byte)((integer & 0xFF)));
                     return;
                 }
-                if (integer > 0x1FFFFFFF) { throw new ArgumentOutOfRangeException(); }
+                if (integer > 0x1FFFFFFF) { throw new System.ArgumentOutOfRangeException(); }
 
                 result.Add((byte)((integer >> 24) | 0xFF));
                 result.Add((byte)((integer >> 16) | 0xFF));

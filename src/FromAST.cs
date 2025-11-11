@@ -23,6 +23,8 @@
  */
 
 using Runic.AST;
+using System;
+using System.Collections.Generic;
 using static Runic.AST.Node.Expression;
 using static Runic.AST.Node.Expression.Constant;
 
@@ -280,7 +282,7 @@ namespace Runic.CIL
         void SequenceToCIL(Context context, Runic.AST.Node.Expression.Sequence seq, ref int stackSize)
         {
             NodeToCIL(context, seq.First, ref stackSize);
-            if (seq.First.Type is not Runic.AST.Type.Void) { stackSize -= 1; context.Emitter.Pop(); }
+            if (!(seq.First.Type is Runic.AST.Type.Void)) { stackSize -= 1; context.Emitter.Pop(); }
             NodeToCIL(context, seq.Second, ref stackSize);
         }
         void DereferenceToCIL(Context context, Runic.AST.Node.Expression.Dereference deref, ref int stackSize)
@@ -664,22 +666,74 @@ namespace Runic.CIL
                 default: throw new Exception("Unsupported node type: " + node.GetType().ToString());
             }
         }
+        void EnsureReturn(Context context, Runic.AST.Node.Function function)
+        {
+            switch (function.ReturnType)
+            {
+                case Runic.AST.Type.Void @void: break;
+                case Runic.AST.Type.Integer integer:
+                    switch (integer.Bits)
+                    {
+                        case 8: context.Emitter.LdcI4(0); break;
+                        case 16: context.Emitter.LdcI4(0); break;
+                        case 32: context.Emitter.LdcI4(0); break;
+                        case 64: context.Emitter.LdcI8(0); break;
+                    }
+                    break;
+                case Runic.AST.Type.FloatingPoint floatingPoint:
+                    switch (floatingPoint.Bits)
+                    {
+                        case 32: context.Emitter.LdcR4(0.0f); break;
+                        case 64: context.Emitter.LdcR8(0.0); break;
+                    }
+                    break;
+                case Runic.AST.Type.Pointer pointer:
+                    context.Emitter.LdcI4(0);
+                    context.Emitter.ConvI();
+                    break;
+                case Runic.AST.Type.StructOrUnion structType:
+                    {
+                        context.Emitter.LdcI4(0);
+                        context.Emitter.ConvI();
+                        context.Emitter.LdObj(false, 0, GetTypeToken(structType));
+                    }
+                    break;
+            }
+            context.Emitter.Ret();
+        }
         public void ToCIL(Runic.AST.Node.Function function, Runic.CIL.Emitter emitter, out int maxStackSize, out byte[] localSignature)
         {
+#if NET6_0_OR_GREATER
+            Runic.AST.Node.Return? lastNodeAsReturn = null;
+#else
+            Runic.AST.Node.Return lastNodeAsReturn = null;
+#endif
             var context = new Context(emitter);
             int stackSize = 0;
             for (int n = 0; n < function.Body.Length; n++)
             {
                 Runic.AST.Node node = function.Body[n];
-                NodeToCIL(context, function.Body[n], ref stackSize);
+                if (!(node is Runic.AST.Node.Empty))
                 {
-                    Runic.AST.Node.Expression? expression = node as Runic.AST.Node.Expression;
-                    if (expression != null && !(expression.Type is Runic.AST.Type.Void))
+                    NodeToCIL(context, function.Body[n], ref stackSize);
                     {
-                        stackSize -= 1;
-                        emitter.Pop();
+#if NET6_0_OR_GREATER
+                        Runic.AST.Node.Expression? expression = node as Runic.AST.Node.Expression;
+#else
+                        Runic.AST.Node.Expression expression = node as Runic.AST.Node.Expression;
+#endif
+                        if (expression != null && !(expression.Type is Runic.AST.Type.Void))
+                        {
+                            stackSize -= 1;
+                            emitter.Pop();
+                        }
+                        lastNodeAsReturn = node as Runic.AST.Node.Return;
                     }
                 }
+            }
+            if (lastNodeAsReturn == null)
+            {
+                EnsureReturn(context, function);
             }
             context.Emitter.Flush();
             maxStackSize = context.MaxStackSize;
