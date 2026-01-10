@@ -25,6 +25,7 @@
 using Runic.AST;
 using System;
 using System.Collections.Generic;
+using static Runic.AST.Node;
 using static Runic.AST.Node.Expression;
 using static Runic.AST.Node.Expression.Constant;
 
@@ -487,6 +488,44 @@ namespace Runic.CIL
             }
         }
 
+        void ForToCIL(Context context, Runic.AST.Node.For @for, ref int stackSize)
+        {
+            Emitter.Label loopStart = context.Emitter.DeclareLabel();
+            Emitter.Label loopEnd = context.Emitter.DeclareLabel();
+
+            if (@for.Initialization != null) 
+            { 
+                NodeToCIL(context, @for.Initialization, ref stackSize);
+                if (!(@for.Initialization.Type is Runic.AST.Type.Void))
+                {
+                    stackSize -= 1;
+                    context.Emitter.Pop();
+                }
+            }
+            context.Emitter.MarkLabel(loopStart);
+            if (@for.Condition != null)
+            {
+                NodeToCIL(context, @for.Condition, ref stackSize);
+                stackSize -= 1;
+                context.Emitter.BrFalse(loopEnd);
+            }
+            if (@for.Body != null && @for.Body.Length > 0)
+            {
+                for (int n = 0; n < @for.Body.Length; n++) { NodeToCIL(context, @for.Body[n], ref stackSize); }
+            }
+            if (@for.Increment != null) 
+            { 
+                NodeToCIL(context, @for.Increment, ref stackSize);
+                if (!(@for.Increment.Type is Runic.AST.Type.Void))
+                {
+                    stackSize -= 1;
+                    context.Emitter.Pop();
+                }
+            }
+            context.Emitter.Br(loopStart);
+            context.Emitter.MarkLabel(loopEnd);
+        }
+
         void CallToCIL(Context context, Runic.AST.Node.Expression.Call call, ref int stackSize)
         {
             for (int n = 0; n < call.Parameters.Length; n++)
@@ -662,6 +701,7 @@ namespace Runic.CIL
                 case Runic.AST.Node.Switch @switch: SwitchToCIL(context, @switch, ref stackSize); break;
                 case Runic.AST.Node.Label label: LabelToCIL(context, label); break;
                 case Runic.AST.Node.If @if: IfToCIL(context, @if, ref stackSize); break;
+                case Runic.AST.Node.For @for: ForToCIL(context, @for, ref stackSize); break;
                 case Runic.AST.Node.Empty empty: break;
                 default: throw new Exception("Unsupported node type: " + node.GetType().ToString());
             }
