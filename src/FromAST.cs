@@ -470,11 +470,11 @@ namespace Runic.CIL
                 context.Emitter.BrFalse(onFalse);
                 if (@if.Body != null && @if.Body.Length > 0)
                 {
-                    for (int n = 0; n < @if.Body.Length; n++) { NodeToCIL(context, @if.Body[n], ref stackSize); }
+                    for (int n = 0; n < @if.Body.Length; n++) { NodeToCILDiscard(context, @if.Body[n], ref stackSize); }
                 }
                 context.Emitter.Br(end);
                 context.Emitter.MarkLabel(onFalse);
-                for (int n = 0; n < @if.Body.Length; n++) { NodeToCIL(context, @if.ElseBody[n], ref stackSize); }
+                for (int n = 0; n < @if.Body.Length; n++) { NodeToCILDiscard(context, @if.ElseBody[n], ref stackSize); }
                 context.Emitter.MarkLabel(end);
                 context.Emitter.Nop();
             }
@@ -482,9 +482,46 @@ namespace Runic.CIL
             {
                 Emitter.Label end = context.Emitter.DeclareLabel();
                 context.Emitter.BrFalse(end);
-                for (int n = 0; n < @if.Body.Length; n++) { NodeToCIL(context, @if.Body[n], ref stackSize); }
+                for (int n = 0; n < @if.Body.Length; n++) { NodeToCILDiscard(context, @if.Body[n], ref stackSize); }
                 context.Emitter.MarkLabel(end);
                 context.Emitter.Nop();
+            }
+        }
+
+        void WhileToCIL(Context context, Runic.AST.Node.While @while, ref int stackSize)
+        {
+            Emitter.Label loopStart = context.Emitter.DeclareLabel();
+            Emitter.Label loopEnd = context.Emitter.DeclareLabel();
+
+            context.Emitter.MarkLabel(loopStart);
+            if (@while.Condition != null)
+            {
+                NodeToCIL(context, @while.Condition, ref stackSize);
+                stackSize -= 1;
+                context.Emitter.BrFalse(loopEnd);
+            }
+            if (@while.Body != null && @while.Body.Length > 0)
+            {
+                for (int n = 0; n < @while.Body.Length; n++) { NodeToCILDiscard(context, @while.Body[n], ref stackSize); }
+            }
+            context.Emitter.Br(loopStart);
+            context.Emitter.MarkLabel(loopEnd);
+        }
+
+        void DoWhileToCIL(Context context, Runic.AST.Node.DoWhile dowhile, ref int stackSize)
+        {
+            Emitter.Label loopStart = context.Emitter.DeclareLabel();
+
+            context.Emitter.MarkLabel(loopStart);
+            if (dowhile.Body != null && dowhile.Body.Length > 0)
+            {
+                for (int n = 0; n < dowhile.Body.Length; n++) { NodeToCILDiscard(context, dowhile.Body[n], ref stackSize); }
+            }
+            if (dowhile.Condition != null)
+            {
+                NodeToCIL(context, dowhile.Condition, ref stackSize);
+                stackSize -= 1;
+                context.Emitter.BrTrue(loopStart);
             }
         }
 
@@ -494,13 +531,8 @@ namespace Runic.CIL
             Emitter.Label loopEnd = context.Emitter.DeclareLabel();
 
             if (@for.Initialization != null) 
-            { 
-                NodeToCIL(context, @for.Initialization, ref stackSize);
-                if (!(@for.Initialization.Type is Runic.AST.Type.Void))
-                {
-                    stackSize -= 1;
-                    context.Emitter.Pop();
-                }
+            {
+                NodeToCILDiscard(context, @for.Initialization, ref stackSize);
             }
             context.Emitter.MarkLabel(loopStart);
             if (@for.Condition != null)
@@ -511,16 +543,11 @@ namespace Runic.CIL
             }
             if (@for.Body != null && @for.Body.Length > 0)
             {
-                for (int n = 0; n < @for.Body.Length; n++) { NodeToCIL(context, @for.Body[n], ref stackSize); }
+                for (int n = 0; n < @for.Body.Length; n++) { NodeToCILDiscard(context, @for.Body[n], ref stackSize); }
             }
             if (@for.Increment != null) 
-            { 
-                NodeToCIL(context, @for.Increment, ref stackSize);
-                if (!(@for.Increment.Type is Runic.AST.Type.Void))
-                {
-                    stackSize -= 1;
-                    context.Emitter.Pop();
-                }
+            {
+                NodeToCILDiscard(context, @for.Increment, ref stackSize);
             }
             context.Emitter.Br(loopStart);
             context.Emitter.MarkLabel(loopEnd);
@@ -702,10 +729,30 @@ namespace Runic.CIL
                 case Runic.AST.Node.Label label: LabelToCIL(context, label); break;
                 case Runic.AST.Node.If @if: IfToCIL(context, @if, ref stackSize); break;
                 case Runic.AST.Node.For @for: ForToCIL(context, @for, ref stackSize); break;
+                case Runic.AST.Node.While @while: WhileToCIL(context, @while, ref stackSize); break;
+                case Runic.AST.Node.DoWhile dowhile: DoWhileToCIL(context, dowhile, ref stackSize); break;
                 case Runic.AST.Node.Empty empty: break;
                 default: throw new Exception("Unsupported node type: " + node.GetType().ToString());
             }
+        } 
+
+        void NodeToCILDiscard(Context context, Runic.AST.Node node, ref int stackSize)
+        {
+            NodeToCIL(context, node, ref stackSize);
+            {
+#if NET6_0_OR_GREATER
+                Runic.AST.Node.Expression? expression = node as Runic.AST.Node.Expression;
+#else
+                Runic.AST.Node.Expression expression = node as Runic.AST.Node.Expression;
+#endif
+                if (expression != null && !(expression.Type is Runic.AST.Type.Void))
+                {
+                    stackSize -= 1;
+                    context.Emitter.Pop();
+                }
+            }
         }
+
         void EnsureReturn(Context context, Runic.AST.Node.Function function)
         {
             switch (function.ReturnType)
